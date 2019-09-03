@@ -4,6 +4,13 @@ import cv2
 import dlib
 from .eye import Eye
 from .calibration import Calibration
+from scipy.spatial import distance as dist
+from imutils import face_utils
+from threading import Thread
+import numpy as np
+import argparse
+import imutils
+import time
 
 
 class GazeTracking(object):
@@ -13,11 +20,16 @@ class GazeTracking(object):
     and pupils and allows to know if the eyes are open or closed
     """
 
-    def __init__(self):
+    def __init__(self, MOUTH_AR_THRESH = 0.7):
         self.frame = None
         self.eye_left = None
         self.eye_right = None
         self.calibration = Calibration()
+
+        # MOUTH
+        self.MOUTH_AR_THRESH = MOUTH_AR_THRESH
+        self.mStart = 49
+        self.mEnd = 68
 
         # _face_detector is used to detect faces
         self._face_detector = dlib.get_frontal_face_detector()
@@ -39,29 +51,30 @@ class GazeTracking(object):
         except Exception:
             return False
 
-    def _analyze(self):
+    def _analyze(self, dlib_face_box):
         """Detects the face and initialize Eye objects"""
         frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
-        faces = self._face_detector(frame)
-        #print('Faces:', type(faces))
+
         try:
-            landmarks = self._predictor(frame, faces[0])
+            landmarks = self._predictor(frame, dlib_face_box)
             #print('Landmark: ', landmarks.num_parts)
             self.eye_left = Eye(frame, landmarks, 0, self.calibration)
             self.eye_right = Eye(frame, landmarks, 1, self.calibration)
+            shape = face_utils.shape_to_np(landmarks)
+            self.mouth = shape[self.mStart:self.mEnd]
 
         except IndexError:
             self.eye_left = None
             self.eye_right = None
 
-    def refresh(self, frame):
+    def refresh(self, frame, dlib_face_box):
         """Refreshes the frame and analyzes it.
 
         Arguments:
             frame (numpy.ndarray): The frame to analyze
         """
         self.frame = frame
-        self._analyze()
+        self._analyze(dlib_face_box)
         #print('Horizontal:', self.horizontal_ratio())
         #print('Vertical:', self.vertical_ratio())
 
@@ -149,3 +162,26 @@ class GazeTracking(object):
             cv2.line(frame, (x_right, y_right - 5), (x_right, y_right + 5), color)
 
         return frame
+
+    @staticmethod
+    def mouth_aspect_ratio(mouth):
+        # compute the euclidean distances between the two sets of
+    	# vertical mouth landmarks (x, y)-coordinates
+    	A = dist.euclidean(mouth[2], mouth[9]) # 51, 59
+    	B = dist.euclidean(mouth[4], mouth[7]) # 53, 57
+
+    	# compute the euclidean distance between the horizontal
+    	# mouth landmark (x, y)-coordinates
+    	C = dist.euclidean(mouth[0], mouth[6]) # 49, 55
+
+    	# compute the mouth aspect ratio
+    	mar = (A + B) / (2.0 * C)
+
+    	# return the mouth aspect ratio
+    	return mar
+
+    def is__mouth_open(self):
+        if GazeTracking.mouth_aspect_ratio(self.mouth) > self.MOUTH_AR_THRESH:
+            return True
+        else:
+            return False

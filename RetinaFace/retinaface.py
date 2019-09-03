@@ -150,7 +150,7 @@ class RetinaFace:
     return data
 
   def detect(self, img, threshold=0.5, scales=[1.0], do_flip=False):
-    #print('in_detect', threshold, scales, do_flip, do_nms)
+
     proposals_list = []
     scores_list = []
     landmarks_list = []
@@ -185,8 +185,7 @@ class RetinaFace:
           timeb = datetime.datetime.now()
           diff = timeb - timea
           print('X1 uses', diff.total_seconds(), 'seconds')
-        #self.model.bind(data_shapes=[('data', (1, 3, image_size[0], image_size[1]))], for_training=False)
-        #im_info = [im.shape[0], im.shape[1], im_scale]
+
         im_info = [im.shape[0], im.shape[1]]
         im_tensor = np.zeros((1, 3, im.shape[0], im.shape[1]))
         for i in range(3):
@@ -203,92 +202,57 @@ class RetinaFace:
           print('X3 uses', diff.total_seconds(), 'seconds')
         self.model.forward(db, is_train=False)
         net_out = self.model.get_outputs()
-        #post_nms_topN = self._rpn_post_nms_top_n
-        #min_size_dict = self._rpn_min_size_fpn
+
 
         for _idx,s in enumerate(self._feat_stride_fpn):
-            #if len(scales)>1 and s==32 and im_scale==scales[-1]:
-            #  continue
+
             _key = 'stride%s'%s
             stride = int(s)
-            #if self.vote and stride==4 and len(scales)>2 and (im_scale==scales[0]):
-            #  continue
+
             if self.use_landmarks:
               idx = _idx*3
             else:
               idx = _idx*2
-            #print('getting', im_scale, stride, idx, len(net_out), data.shape, file=sys.stderr)
+
             scores = net_out[idx].asnumpy()
             if self.debug:
               timeb = datetime.datetime.now()
               diff = timeb - timea
               print('A uses', diff.total_seconds(), 'seconds')
-            #print(scores.shape)
-            #print('scores',stride, scores.shape, file=sys.stderr)
+
             scores = scores[:, self._num_anchors['stride%s'%s]:, :, :]
 
             idx+=1
             bbox_deltas = net_out[idx].asnumpy()
 
-            #if DEBUG:
-            #    print 'im_size: ({}, {})'.format(im_info[0], im_info[1])
-            #    print 'scale: {}'.format(im_info[2])
-
-            #_height, _width = int(im_info[0] / stride), int(im_info[1] / stride)
             height, width = bbox_deltas.shape[2], bbox_deltas.shape[3]
 
             A = self._num_anchors['stride%s'%s]
             K = height * width
             anchors_fpn = self._anchors_fpn['stride%s'%s]
             anchors = anchors_plane(height, width, stride, anchors_fpn)
-            #print((height, width), (_height, _width), anchors.shape, bbox_deltas.shape, scores.shape, file=sys.stderr)
-            anchors = anchors.reshape((K * A, 4))
-            #print('num_anchors', self._num_anchors['stride%s'%s], file=sys.stderr)
-            #print('HW', (height, width), file=sys.stderr)
-            #print('anchors_fpn', anchors_fpn.shape, file=sys.stderr)
-            #print('anchors', anchors.shape, file=sys.stderr)
-            #print('bbox_deltas', bbox_deltas.shape, file=sys.stderr)
-            #print('scores', scores.shape, file=sys.stderr)
 
+            anchors = anchors.reshape((K * A, 4))
 
             scores = self._clip_pad(scores, (height, width))
             scores = scores.transpose((0, 2, 3, 1)).reshape((-1, 1))
 
-            #print('pre', bbox_deltas.shape, height, width)
+
             bbox_deltas = self._clip_pad(bbox_deltas, (height, width))
-            #print('after', bbox_deltas.shape, height, width)
+
             bbox_deltas = bbox_deltas.transpose((0, 2, 3, 1))
             bbox_pred_len = bbox_deltas.shape[3]//A
-            #print(bbox_deltas.shape)
+
             bbox_deltas = bbox_deltas.reshape((-1, bbox_pred_len))
 
-
-            #print(anchors.shape, bbox_deltas.shape, A, K, file=sys.stderr)
             proposals = self.bbox_pred(anchors, bbox_deltas)
             proposals = clip_boxes(proposals, im_info[:2])
 
-            #if self.vote:
-            #  if im_scale>1.0:
-            #    keep = self._filter_boxes2(proposals, 160*im_scale, -1)
-            #  else:
-            #    keep = self._filter_boxes2(proposals, -1, 100*im_scale)
-            #  if stride==4:
-            #    keep = self._filter_boxes2(proposals, 12*im_scale, -1)
-            #    proposals = proposals[keep, :]
-            #    scores = scores[keep]
-
-            #keep = self._filter_boxes(proposals, min_size_dict['stride%s'%s] * im_info[2])
-            #proposals = proposals[keep, :]
-            #scores = scores[keep]
-            #print('333', proposals.shape)
 
             scores_ravel = scores.ravel()
-            #print('__shapes', proposals.shape, scores_ravel.shape)
-            #print('max score', np.max(scores_ravel))
+
             order = np.where(scores_ravel>=threshold)[0]
-              #_scores = scores_ravel[order]
-              #_order = _scores.argsort()[::-1]
-              #order = order[_order]
+
             proposals = proposals[order, :]
             scores = scores[order]
             if stride==4 and self.decay4<1.0:
@@ -310,27 +274,21 @@ class RetinaFace:
               landmark_deltas = self._clip_pad(landmark_deltas, (height, width))
               landmark_pred_len = landmark_deltas.shape[1]//A
               landmark_deltas = landmark_deltas.transpose((0, 2, 3, 1)).reshape((-1, 5, landmark_pred_len//5))
-              #print(landmark_deltas.shape, landmark_deltas)
+
               landmarks = self.landmark_pred(anchors, landmark_deltas)
               landmarks = landmarks[order, :]
 
               if flip:
                 landmarks[:,:,0] = im.shape[1] - landmarks[:,:,0] - 1
-                #for a in range(5):
-                #  oldx1 = landmarks[:, a].copy()
-                #  landmarks[:,a] = im.shape[1] - oldx1 - 1
+
                 order = [1,0,2,4,3]
                 flandmarks = landmarks.copy()
                 for idx, a in enumerate(order):
                   flandmarks[:,idx,:] = landmarks[:,a,:]
-                  #flandmarks[:, idx*2] = landmarks[:,a*2]
-                  #flandmarks[:, idx*2+1] = landmarks[:,a*2+1]
+
                 landmarks = flandmarks
               landmarks[:,:,0:2] /= im_scale
-              #landmarks /= im_scale
-              #landmarks = landmarks.reshape( (-1, landmark_pred_len) )
               landmarks_list.append(landmarks)
-              #proposals = np.hstack((proposals, landmarks))
 
     if self.debug:
       timeb = datetime.datetime.now()
@@ -403,11 +361,7 @@ class RetinaFace:
       ty = np.arctan2(vy[1], vy[0])
       d = ty-tx
       d = np.degrees(d)
-      #print(vx, tx, vy, ty, d)
-      #if d<-1.*math.pi:
-      #  d+=2*math.pi
-      #elif d>math.pi:
-      #  d-=2*math.pi
+
       if d<-180.0:
         d+=360.
       elif d>180.0:
@@ -556,19 +510,9 @@ class RetinaFace:
         pred[:,i,0] = landmark_deltas[:,i,0]*widths + ctr_x
         pred[:,i,1] = landmark_deltas[:,i,1]*heights + ctr_y
       return pred
-      #preds = []
-      #for i in range(landmark_deltas.shape[1]):
-      #  if i%2==0:
-      #    pred = (landmark_deltas[:,i]*widths + ctr_x)
-      #  else:
-      #    pred = (landmark_deltas[:,i]*heights + ctr_y)
-      #  preds.append(pred)
-      #preds = np.vstack(preds).transpose()
-      #return preds
 
   def bbox_vote(self, det):
-      #order = det[:, 4].ravel().argsort()[::-1]
-      #det = det[order, :]
+
       if det.shape[0] == 0:
           dets = np.array([[10, 10, 20, 20, 0.002]])
           det = np.empty(shape=[0, 5])
@@ -607,4 +551,3 @@ class RetinaFace:
               dets = det_accu_sum
       dets = dets[0:750, :]
       return dets
-

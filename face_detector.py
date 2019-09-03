@@ -5,11 +5,9 @@ sys.path.append('./insightface')
 sys.path.append('insightface/deploy')
 sys.path.append('insightface/src/common')
 import face_preprocess
-# sys.path.append('./RetinaFace')
 sys.path.append('./RetinaFace')
 from retinaface import RetinaFace
-#sys.path.append('./insightface')
-#import face_preprocess
+
 
 import cv2
 import numpy as np
@@ -69,7 +67,7 @@ class FaceDetector:
         for i in range(face_boxes.shape[0]):
             faceImage = face_preprocess.preprocess(image, face_boxes[i], landmarks[i], image_size='112,112')
             faces.append(faceImage)
-        return faces
+        return faces, face_boxes
 
 if __name__ == '__main__':
     faceDetector = FaceDetector()

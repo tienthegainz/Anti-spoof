@@ -8,6 +8,7 @@ import cv2
 import sys
 import numpy as np
 import time
+import dlib
 #from scipy.misc import imresize, imread
 os.environ['KERAS_BACKEND'] = 'tensorflow'
 
@@ -27,7 +28,7 @@ faceDetector = FaceDetector()
 faceSearch = FaceSearch()
 faceExtractor = ExtractFeature()
 gaze = GazeTracking()
-mouth = MouthTracking()
+#mouth = MouthTracking()
 real_fake_model = load_model('quality_models/liveliness.model')
 labels = ['fake', 'Need verify', 'real']
 action_sequence_text = ['Close mouth', 'Look left', 'Open mouth', 'Close mouth', 'Look Center', 'Look Right']
@@ -49,9 +50,9 @@ def predict_real_fake(face):
         i = 2
     return i, labels[i]
 
-def track_eye(face):
+def track_eye_mouth(face, dlib_face_box):
     global gaze
-    gaze.refresh(face)
+    gaze.refresh(face, dlib_face_box)
     left_pupil = gaze.pupil_left_coords()
     right_pupil = gaze.pupil_right_coords()
     if gaze.is_right():
@@ -76,11 +77,17 @@ def track_eye(face):
     else:
         text += ' Unknown'
     '''
+    if gaze.is__mouth_open():
+        mouth_text = 'Mouth open'
+        mouth_status = 1
+    else:
+        mouth_text = 'Mouth close'
+        mouth_status = 0
 
-    return status, text, left_pupil, right_pupil
+    return status, text, left_pupil, right_pupil, mouth_status, mouth_text
 
 def track_mouth(face):
-    mouth.analyze(face)
+    gaze.analyze(face)
     if mouth.is_open():
         text = 'Mouth open'
         status = 1
@@ -117,7 +124,7 @@ def analysis_video(video_path):
     count = -1
     person_name = ""
     status = -1
-    people = dict() #save previous movement
+    #people = dict() #save previous movement
     action_num = 0
     passed_frame = 0
     action_status = True
@@ -128,20 +135,27 @@ def analysis_video(video_path):
       ret, frame = cap.read()
       count+=1
       if ret == True and count%3 == 0:
-        face_mats = faceDetector.get_face_from_image(frame)
-        #print('{} faces detected in frame {}'.format(len(face_mats), count))
-        for face_mat in face_mats:
+        people = dict()
+        face_mats, face_boxes = faceDetector.get_face_from_image(frame)
+
+        for i in range(len(face_mats)):
+            face_mat = face_mats[i]
+            face_box = face_boxes[i]
+            dlib_face_box = dlib.rectangle(left=int(face_box[0]),top=int(face_box[1]),right=int(face_box[2]),bottom=int(face_box[3]))
             person = faceSearch.search_index_by_vector(face_mat)
-            #print(person)
+
             if person['success'] == True:
                 person_name = person['results'][0]['id'].split('_')[0]
 
             # Quality, texture filter
             quality_status, quality_text = predict_real_fake(face_mat)
             # Motion filter
-            eye_status, eye_text, left_pupil, right_pupil = track_eye(frame)
-            mouth_status, mouth_text = track_mouth(face_mat)
+            eye_status, eye_text, left_pupil, right_pupil, mouth_status, mouth_text = track_eye_mouth(frame, dlib_face_box)
+            #mouth_status, mouth_text = track_mouth(face_mat)
+            people[str(i)] = {'name': person_name, 'eye': eye_text, 'mouth': mouth_text, 'quality': quality_text}
 
+
+            '''
             cv2.putText(frame, person_name, (10, 30), cv2.FONT_HERSHEY_DUPLEX, 0.8, (255, 0, 0), 2)
             cv2.putText(frame, 'Quality status: {}'.format(quality_text),
                         (10, 60), cv2.FONT_HERSHEY_DUPLEX, 0.8, (255, 0, 0), 2)
@@ -168,9 +182,11 @@ def analysis_video(video_path):
                             (10, 420), cv2.FONT_HERSHEY_DUPLEX, 0.8, (255, 0, 0), 2)
 
             cv2.imwrite('data/output/{}.png'.format(count), frame)
+            '''
+
             cv2.imshow('Frame',frame)
-        # Display the resulting frame
-        #out.write(frame)
+
+        print('In frame {}: {}\n'.format(count, people))
         # Press Q on keyboard to  exit
         if cv2.waitKey(25) & 0xFF == ord('q'):
           break
@@ -188,7 +204,7 @@ def analysis_video(video_path):
 
 def analysis_image(image_path):
     image = cv2.imread(image_path)
-    face_mats = faceDetector.get_face_from_image(image)
+    face_mats, _ = faceDetector.get_face_from_image(image)
     print('{} faces detected'.format(len(face_mats)))
     for face_mat in face_mats:
         print('-----------------')
