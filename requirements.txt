@@ -23,7 +23,7 @@ mock==3.0.5
 mtcnn==0.0.9
 mxnet==1.4.1
 networkx==2.3
-numpy==1.14.6
+numpy==1.22.0
 opencv-python==4.1.0.25
 Pillow==6.0.0
 protobuf==3.7.1
